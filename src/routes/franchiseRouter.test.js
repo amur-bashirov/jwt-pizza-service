@@ -73,6 +73,15 @@ test('create Franchise as admin', async () => {
   expect(createFranchiseRes.body.admins[0]).toHaveProperty('email', adminUser.email);
 });
 
+test('delete Franchise as admin', async () => {
+  const deleteFranchiseRes = await request(app)
+    .delete('/api/franchise/${newFranchise.id}')
+    .set('Authorization', `Bearer ${adminAuthToken}`)
+
+  expect(deleteFranchiseRes.status).toBe(200);
+  expect(deleteFranchiseRes.body).toHaveProperty('message', 'franchise deleted');
+});
+
 
 test('create Franchise as auser', async () => {
   const createFranchiseRes = await request(app)
@@ -88,3 +97,16 @@ test('get Franchise', async() => {
     .get('/api/franchise?page=0&limit=10&name=*')
     expect(getFranchiseRes.status).toBe(200);
 });
+
+
+test('get user Franchise', async() => {
+    const getUserFranRes = await request(app)
+    .get('/api/franchise/${regularUser.id}')
+    .set('Authorization', `Bearer ${regularAuthToken}`)
+    
+    expect(getUserFranRes.status).toBe(200);
+    expect(Array.isArray(getUserFranRes.body)).toBe(true);
+
+});
+
+
