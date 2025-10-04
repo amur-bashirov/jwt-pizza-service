@@ -73,6 +73,8 @@ test('create Franchise as admin', async () => {
   expect(createFranchiseRes.body.admins[0]).toHaveProperty('email', adminUser.email);
 });
 
+
+
 test('delete Franchise as admin', async () => {
   const deleteFranchiseRes = await request(app)
     .delete('/api/franchise/${newFranchise.id}')
@@ -108,5 +110,38 @@ test('get user Franchise', async() => {
     expect(Array.isArray(getUserFranRes.body)).toBe(true);
 
 });
+
+test('create store as admin', async () => {
+    franchise2 = {
+    name: randomName(),
+    admins: [{ email: adminUser.email }],
+    stores: [{ id: randomName(), name: randomName(), totalRevenue: 1000 }],
+  };
+  const createFranchiseRes = await request(app)
+    .post('/api/franchise')
+    .set('Authorization', `Bearer ${adminAuthToken}`)
+    .send(franchise2);
+
+  expect(createFranchiseRes.status).toBe(200);
+  const franchiseId = createFranchiseRes.body.id;
+
+  
+  const createStoreRes = await request(app)
+    .post(`/api/franchise/${franchiseId}/store`)
+    .set('Authorization', `Bearer ${adminAuthToken}`)
+    .send(newStore);
+
+  console.log('Create Store Response:', createStoreRes.status, createStoreRes.body);
+
+  expect(createStoreRes.status).toBe(200);
+  expect(createStoreRes.body).toHaveProperty('id');
+  expect(createStoreRes.body).toHaveProperty('name', newStore.name);
+});
+
+
+
+
+
+
 
 
