@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "cd src && node index.js"
+    "run": "cd src && node index.js",
+    "test": "jest"
   },
   "license": "MIT",
   "dependencies": {
@@ -12,5 +13,20 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.9.7"
-  }
+  },
+    "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amur-bashirov/devops.git"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/amur-bashirov/devops/issues"
+  },
+  "homepage": "https://github.com/amur-bashirov/devops#readme"
 }
