@@ -19,6 +19,19 @@ if (process.env.VSCODE_INSPECTOR_OPTIONS) {
   jest.setTimeout(60 * 1000 * 5); // 5 minutes
 }
 
+let newRegularUser;
+let regularUser;
+let newNewStore;
+let newStore;
+let adminUser;
+let newFranchise;
+
+let adminAuthToken;
+let regularAuthToken;
+
+let franchise2;
+let franchise3
+
 
 
 
@@ -47,11 +60,7 @@ beforeAll(async () => {
     stores: [{ id: randomName(), name: randomName(), totalRevenue: 1000 }],
   };
 
-  regUserFranchise = {
-    name: randomName(),
-    admins: [{ email: regularUser.email }],
-    stores: [{ id: randomName(), name: randomName(), totalRevenue: 1000 }],
-  };
+  
 
   const userLoginRes = await request(app).post("/api/auth").send(regularUser);
   const loginRes = await request(app).put("/api/auth").send(adminUser);
@@ -98,6 +107,25 @@ test('get Franchise', async() => {
     const getFranchiseRes = await request(app)
     .get('/api/franchise?page=0&limit=10&name=*')
     expect(getFranchiseRes.status).toBe(200);
+});
+
+test('admin can get another user\'s franchises', async () => {
+ 
+  const otherUser = {
+    name: 'another diner',
+    email: Math.random().toString(36).substring(2, 12) + '@test.com',
+    password: 'password123',
+  };
+  const otherUserRes = await request(app).post('/api/auth').send(otherUser);
+  const otherUserId = otherUserRes.body.user.id;
+
+  
+  const getUserFranRes = await request(app)
+    .get(`/api/franchise/${otherUserId}`)
+    .set('Authorization', `Bearer ${adminAuthToken}`);
+
+  expect(getUserFranRes.status).toBe(200);
+  expect(Array.isArray(getUserFranRes.body)).toBe(true);
 });
 
 
