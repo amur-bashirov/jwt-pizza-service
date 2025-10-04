@@ -30,7 +30,6 @@ let adminAuthToken;
 let regularAuthToken;
 
 let franchise2;
-let franchise3
 
 
 
