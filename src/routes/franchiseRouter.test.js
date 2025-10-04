@@ -136,7 +136,56 @@ test('create store as admin', async () => {
   expect(createStoreRes.status).toBe(200);
   expect(createStoreRes.body).toHaveProperty('id');
   expect(createStoreRes.body).toHaveProperty('name', newStore.name);
+
+
+
+  const deleteStoreRes1 = await request(app)
+  .delete('/api/franchise/${franchiseId}/store/${newStore.id}')
+  .set('Authorization', `Bearer ${regularAuthToken}`)
+
+  expect(deleteStoreRes1.status).toBe(403)
+  expect(deleteStoreRes1.body).toHaveProperty('message', 'unable to delete a store');
+
+
+  const deleteStoreRes = await request(app)
+  .delete('/api/franchise/${franchiseId}/store/${newStore.id}')
+  .set('Authorization', `Bearer ${adminAuthToken}`)
+
+  expect(deleteStoreRes.status).toBe(200)
+  expect(deleteStoreRes.body).toHaveProperty('message', 'store deleted');
+
+
 });
+
+test('create store as user', async () => {
+    franchise3 = {
+    name: randomName(),
+    admins: [{ email: adminUser.email }],
+    stores: [{ id: randomName(), name: randomName(), totalRevenue: 1000 }],
+  };
+  const createFranchiseRes = await request(app)
+    .post('/api/franchise')
+    .set('Authorization', `Bearer ${adminAuthToken}`)
+    .send(franchise3);
+
+  expect(createFranchiseRes.status).toBe(200);
+  const franchiseId = createFranchiseRes.body.id;
+
+  
+  const createStoreRes = await request(app)
+    .post(`/api/franchise/${franchiseId}/store`)
+    .set('Authorization', `Bearer ${regularAuthToken}`)
+    .send(newStore);
+
+  console.log('Create Store Response:', createStoreRes.status, createStoreRes.body);
+
+  expect(createStoreRes.status).toBe(403);
+  expect(createStoreRes.body).toHaveProperty('message', 'unable to create a store');
+});
+
+
+
+
 
 
 
