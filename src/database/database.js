@@ -120,6 +120,24 @@ class DB {
     }
   }
 
+  async getAllUsers() {
+    const connection = await this.getConnection();
+    console.log('Connection obtained:', !!connection);
+    try {
+      const users = await this.query(
+        connection,
+        `SELECT id, name, email FROM user`
+      );
+      console.log('Users fetched:', users.length);
+      console.log('Users fetched:', users);
+
+      return users || [];
+    } finally {
+      if (connection && connection.end) await connection.end(); 
+    }
+  }
+
+
   async logoutUser(token) {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();
