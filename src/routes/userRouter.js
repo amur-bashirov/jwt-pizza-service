@@ -32,6 +32,15 @@ userRouter.docs = [
     response: { id: 1, name: '常用名字', email: 'a@jwt.com', roles: [{ role: 'admin' }] },
   },
   {
+  method: 'DELETE',
+  path: '/api/user/:userId',
+  requiresAuth: true,
+  description: 'Delete a user by their ID',
+  example: `curl -X DELETE localhost:3000/api/user/1 -H 'Authorization: Bearer tttttt'`,
+  requestBody: {},
+  response: { message: 'user deleted' },
+},
+  {
     method: 'PUT',
     path: '/api/user/:userId',
     requiresAuth: true,
@@ -50,33 +59,56 @@ userRouter.get(
   })
 );
 
-// listUsers with pagination
+// listUsers
 userRouter.get(
   '/',
-  authRouter.authenticateToken,
+  authRouter.authenticateToken, // ensure authentication
   asyncHandler(async (req, res) => {
-    
-    const page = parseInt(req.query.page) || 1; 
-    const limit = parseInt(req.query.limit) || 10; 
+    const page = parseInt(req.query.page) || 0;
+    const limit = parseInt(req.query.limit) || 10;
+    const name = req.query.name || '*';
 
-    
-    const allUsers = await DB.getAllUsers(); 
-    console.log(allUsers)
-
-    
-    const offset = (page - 1) * limit;
-    const paginatedUsers = allUsers.slice(offset, offset + limit);
-
-    
-    res.status(200).json({
-      users: paginatedUsers,
-      page,
-      limit,
-      total: allUsers.length,
-      totalPages: Math.ceil(allUsers.length / limit),
-    });
+    const [users, more] = await DB.getUsers(req.user, page, limit, name);
+    res.json({ users, more });
   })
 );
+
+
+userRouter.delete(
+  '/:userId',
+  authRouter.authenticateToken,
+  asyncHandler(async (req, res) => {
+    const userId = Number(req.params.userId);
+
+    console.log('🧾 DELETE request for userId:', userId);
+    console.log('🔐 Authenticated user object:', req.user);
+
+    // Log what roles the user has
+    if (req.user.roles) {
+      console.log('👑 User roles array:', req.user.roles);
+    } else {
+      console.log('⚠️ No roles field found on req.user');
+    }
+
+    // If user has isRole method, show what it returns for Admin
+    if (typeof req.user.isRole === 'function') {
+      console.log('🔍 isRole(Admin):', req.user.isRole(Role.Admin));
+    }
+
+    // Authorization check
+    if (req.user.id !== userId && !req.user.isRole?.(Role.Admin)) {
+      console.log('🚫 Authorization failed — not admin or self-deleting.');
+      return res.status(403).json({ message: 'unauthorized' });
+    }
+
+    console.log('✅ Authorization passed — proceeding to delete user...');
+    await DB.deleteUser(userId);
+
+    console.log('🗑️ User deleted successfully.');
+    res.json({ message: 'user deleted' });
+  })
+);
+
 
 
 // updateUser

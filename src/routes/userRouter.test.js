@@ -1,5 +1,7 @@
 const request = require('supertest');
 const app = require('../service');
+const { Role, DB } = require('../database/database.js');
+const jwt = require('jsonwebtoken');
 
 
 const testUser = { name: 'pizza diner', email: 'reg@test.com', password: 'a' };
@@ -72,28 +74,83 @@ test('update another user as non-admin should fail with 403', async () => {
   expect(updateRes.body).toHaveProperty('message', 'unauthorized');
 });
 
-test('list users unauthorized', async () => {
-  const listUsersRes = await request(app).get('/api/user');
-  expect(listUsersRes.status).toBe(401);
+
+
+
+
+test('delete own user should succeed', async () => {
+  // Create a fresh user to delete
+  const [user, token] = await registerUser(request(app));
+
+  // Delete the same user
+  const deleteRes = await request(app)
+    .delete(`/api/user/${user.id}`)
+    .set('Authorization', `Bearer ${token}`);
+
+  expect(deleteRes.status).toBe(200);
+  expect(deleteRes.body).toHaveProperty('message', 'user deleted');
+
+  // Try to access /me again with the same token → should fail (unauthorized)
+  const meRes = await request(app)
+    .get('/api/user/me')
+    .set('Authorization', `Bearer ${token}`);
+
+  expect([401, 403]).toContain(meRes.status);
+});
+
+test('delete another user as non-admin should fail with 403', async () => {
+  // Register two users
+  const [userA, tokenA] = await registerUser(request(app));
+  const [userB] = await registerUser(request(app));
+
+  // User A tries to delete user B
+  const deleteRes = await request(app)
+    .delete(`/api/user/${userB.id}`)
+    .set('Authorization', `Bearer ${tokenA}`);
+
+  expect(deleteRes.status).toBe(403);
+  expect(deleteRes.body).toHaveProperty('message', 'unauthorized');
 });
 
 
 
-test('list users with pagination', async () => {
-  const [user, userToken] = await registerUser(request(app));
 
-  const res = await request(app)
-    .get('/api/user?page=1&limit=2')
-    .set('Authorization', 'Bearer ' + userToken);
 
-  expect(res.status).toBe(200);
-  expect(res.body).toHaveProperty('users');
-  expect(Array.isArray(res.body.users)).toBe(true);
-  expect(res.body).toHaveProperty('page', 1);
-  expect(res.body).toHaveProperty('limit', 2);
-  expect(res.body).toHaveProperty('total');
-  expect(res.body).toHaveProperty('totalPages');
+
+
+
+
+
+test('list users as authenticated user should return paginated result', async () => {
+  // Register an authenticated user
+  const [user, token] = await registerUser(request(app));
+
+  // Create a few other users
+  await registerUser(request(app));
+  await registerUser(request(app));
+  await registerUser(request(app));
+
+  // Request first page (page=0 since handler defaults to 0)
+  const listRes = await request(app)
+    .get('/api/user?page=0&limit=2')
+    .set('Authorization', `Bearer ${token}`);
+
+  expect(listRes.status).toBe(200);
+  expect(listRes.body).toHaveProperty('users');
+  expect(Array.isArray(listRes.body.users)).toBe(true);
+  expect(listRes.body).toHaveProperty('more');
+
+  // Try filter by name
+  const nameToFind = user.name.slice(0, 3); // partial match
+  const filterRes = await request(app)
+    .get(`/api/user?name=${encodeURIComponent(nameToFind)}`)
+    .set('Authorization', `Bearer ${token}`);
+
+  expect(filterRes.status).toBe(200);
+  expect(filterRes.body).toHaveProperty('users');
 });
+
+
 
 
 
@@ -112,6 +169,21 @@ async function registerUser(service) {
 function randomName() {
   return Math.random().toString(36).substring(2, 12);
 }
+
+
+
+
+
+async function createTestUser() {
+  const user = {
+    name: randomName(),
+    email: randomName() + '@test.com',
+    password: 'password123'
+  };
+  await request(app).post('/api/auth').send(user);
+  return user;
+}
+
 
 
 

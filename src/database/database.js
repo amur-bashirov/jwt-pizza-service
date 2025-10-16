@@ -120,23 +120,6 @@ class DB {
     }
   }
 
-  async getAllUsers() {
-    const connection = await this.getConnection();
-    console.log('Connection obtained:', !!connection);
-    try {
-      const users = await this.query(
-        connection,
-        `SELECT id, name, email FROM user`
-      );
-      console.log('Users fetched:', users.length);
-      console.log('Users fetched:', users);
-
-      return users || [];
-    } finally {
-      if (connection && connection.end) await connection.end(); 
-    }
-  }
-
 
   async logoutUser(token) {
     token = this.getTokenSignature(token);
@@ -220,6 +203,65 @@ class DB {
       connection.end();
     }
   }
+  async deleteUser(userId) {
+  const connection = await this.getConnection();
+  try {
+    await connection.beginTransaction();
+    try {
+      // Delete any roles the user had
+      await this.query(connection, `DELETE FROM userRole WHERE userId=?`, [userId]);
+      
+      // Delete any active tokens
+      await this.query(connection, `DELETE FROM auth WHERE userId=?`, [userId]);
+      
+      // Finally delete the user
+      await this.query(connection, `DELETE FROM user WHERE id=?`, [userId]);
+
+      await connection.commit();
+    } catch (err) {
+      await connection.rollback();
+      console.error('Delete user error:', err);
+      throw new StatusCodeError('Unable to delete user', 500);
+    }
+  } finally {
+    connection.end();
+  }
+}
+
+
+  async getUsers(authUser, page = 0, limit = 10, nameFilter = '*') {
+  const connection = await this.getConnection();
+  const offset = page * limit;
+  nameFilter = nameFilter.replace(/\*/g, '%');
+
+  try {
+    // Fetch users with pagination
+    let users = await this.query(
+      connection,
+      `SELECT id, name, email FROM user WHERE name LIKE ? LIMIT ${limit + 1} OFFSET ${offset}`,
+      [nameFilter]
+    );
+
+    const more = users.length > limit;
+    if (more) users = users.slice(0, limit);
+
+    // Optional: fetch roles if the user is admin
+    if (authUser?.isRole?.(Role.Admin)) {
+      for (const user of users) {
+        user.roles = await this.query(
+          connection,
+          `SELECT role, objectId FROM userRole WHERE userId=?`,
+          [user.id]
+        );
+      }
+    }
+
+    return [users, more];
+  } finally {
+    connection.end();
+  }
+}
+
 
   async getFranchises(authUser, page = 0, limit = 10, nameFilter = '*') {
     const connection = await this.getConnection();

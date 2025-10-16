@@ -8,7 +8,8 @@ async function createAdminUser() {
   user.email = user.name + '@admin.com';
 
   user = await DB.addUser(user);
-  return { ...user, password: 'toomanysecrets' };
+  user.password = 'toomanysecrets'
+  return user;
 }
 
 function randomName() {
@@ -210,6 +211,39 @@ test('create store as user', async () => {
   expect(createStoreRes.status).toBe(403);
   expect(createStoreRes.body).toHaveProperty('message', 'unable to create a store');
 });
+
+test('admin can delete another user', async () => {
+  // Create a new regular user to delete
+  const userToDelete = {
+    name: 'user-to-delete',
+    email: Math.random().toString(36).substring(2, 12) + '@test.com',
+    password: 'password123',
+  };
+
+  // Register the user
+  const userRes = await request(app).post('/api/auth').send(userToDelete);
+  const userId = userRes.body.user.id;
+
+  console.log('🧾 DELETE request for userId:', userId);
+
+  // Delete the user as admin
+  const deleteRes = await request(app)
+    .delete(`/api/user/${userId}`)
+    .set('Authorization', `Bearer ${adminAuthToken}`);
+
+  console.log('🗑️ User deleted response:', deleteRes.status, deleteRes.body);
+
+  expect(deleteRes.status).toBe(200);
+  expect(deleteRes.body).toHaveProperty('message', 'user deleted');
+
+  // Optional: verify user no longer exists
+  const getUserRes = await request(app)
+    .get(`/api/user/${userId}`)
+    .set('Authorization', `Bearer ${adminAuthToken}`);
+  expect(getUserRes.status).toBe(404);
+});
+
+
 
 
 
