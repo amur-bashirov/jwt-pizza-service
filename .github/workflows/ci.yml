@@ -25,6 +25,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -65,7 +68,7 @@ jobs:
         run: |
           version=$(date +'%Y%m%d.%H%M%S')
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          printf '{"version": "%s" }' "$version" > src/version.json
+          printf '{"version": "%s"}' "$version" > src/version.json
 
       - name: Run tests
         run: npm test
@@ -134,4 +137,5 @@ jobs:
           docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$version .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$version
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$version" >> $GITHUB_OUTPUT
+
 
