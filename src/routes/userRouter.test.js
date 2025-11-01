@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../service');
-const { Role, DB } = require('../database/database.js');
-const jwt = require('jsonwebtoken');
+
+
 
 
 const testUser = { name: 'pizza diner', email: 'reg@test.com', password: 'a' };
@@ -102,6 +102,7 @@ test('delete another user as non-admin should fail with 403', async () => {
   // Register two users
   const [userA, tokenA] = await registerUser(request(app));
   const [userB] = await registerUser(request(app));
+  console.log(userA)
 
   // User A tries to delete user B
   const deleteRes = await request(app)
@@ -174,15 +175,15 @@ function randomName() {
 
 
 
-async function createTestUser() {
-  const user = {
-    name: randomName(),
-    email: randomName() + '@test.com',
-    password: 'password123'
-  };
-  await request(app).post('/api/auth').send(user);
-  return user;
-}
+// async function createTestUser() {
+//   const user = {
+//     name: randomName(),
+//     email: randomName() + '@test.com',
+//     password: 'password123'
+//   };
+//   await request(app).post('/api/auth').send(user);
+//   return user;
+// }
 
 
 
