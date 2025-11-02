@@ -1,101 +1,3 @@
-name: CI Pipeline
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-jobs:
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0.29
-        env:
-          MYSQL_ROOT_PASSWORD: tempdbpassword
-          MYSQL_DATABASE: pizza
-        ports:
-          - '3306:3306'
-        options: >-
-          --health-cmd "mysqladmin ping -ptempdbpassword"
-          --health-interval 10s
-          --health-start-period 10s
-          --health-timeout 5s
-          --health-retries 10
-
-    outputs:
-      version: ${{ steps.set_version.outputs.version }}
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Write config file
-        run: |
-          echo "module.exports = {
-            jwtSecret: '${{ secrets.JWT_SECRET }}',
-            db: {
-              connection: {
-                host: '127.0.0.1',
-                user: 'root',
-                password: 'tempdbpassword',
-                database: 'pizza',
-                connectTimeout: 60000,
-              },
-              listPerPage: 10,
-            },
-            factory: {
-              url: 'https://pizza-factory.cs329.click',
-              apiKey: '${{ secrets.API_KEY }}',
-            },
-          };" > src/config.js
-
-      - name: Set version
-        id: set_version
-        run: |
-          version=$(date +'%Y%m%d.%H%M%S')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          printf '{"version": "%s"}' "$version" > src/version.json
-
-      - name: Run tests
-        run: npm test
-
-      - name: Update coverage
-        run: |
-          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json)
-          color=$(echo "$coverage < 80" | bc | awk '{if ($1) print "red"; else print "green"}')
-          curl -s -X POST "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=${coverage}%25&color=${color}" \
-            -H "authorization: bearer ${{ secrets.API_KEY }}"
-
-      - name: Create dist
-        run: |
-          mkdir dist
-          cp Dockerfile dist
-          cp -r src/* dist
-          cp *.json dist
-          sed -i "s/root/${{ secrets.DB_USERNAME }}/g" dist/config.js
-          sed -i "s/tempdbpassword/${{ secrets.DB_PASSWORD }}/g" dist/config.js
-          sed -i "s/127.0.0.1/${{ secrets.DB_HOSTNAME }}/g" dist/config.js
-
-      - name: Update distribution artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: package
-          path: dist/
-
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -137,5 +39,13 @@ jobs:
           docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$version .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$version
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$version" >> $GITHUB_OUTPUT
+
+      - name: Deploy new container
+        run: |
+          aws ecs update-service \
+            --cluster jwt-pizza-service \
+            --service jwt-pizza-service \
+            --force-new-deployment
+
 
 
