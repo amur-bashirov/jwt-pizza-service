@@ -6,7 +6,7 @@ const { DB, Role } = require('../database/database.js');
 
 const authRouter = express.Router();
 
-app.use(logger.httpLogger);
+
 
 authRouter.docs = [
   {
