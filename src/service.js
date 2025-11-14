@@ -6,9 +6,15 @@ const userRouter = require('./routes/userRouter.js');
 const version = require('./version.json');
 const config = require('./config.js');
 
+const log = require('pizza-logger')(config);
+
 const app = express();
+app.use(log.httpLogger);
 app.use(express.json());
 app.use(setAuthUser);
+
+
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
@@ -44,6 +50,8 @@ app.use('*', (req, res) => {
     message: 'unknown endpoint',
   });
 });
+
+app.use(log.errorLogger);
 
 // Default error handler for all exceptions and errors.
 app.use((err, req, res, next) => {

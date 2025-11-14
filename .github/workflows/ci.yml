@@ -61,6 +61,12 @@ jobs:
               url: 'https://pizza-factory.cs329.click',
               apiKey: '${{ secrets.API_KEY }}',
             },
+            logging:    {
+              source: 'jwt-pizza-service',
+              userId: ${{ secrets.ID }},
+              url: '${{ secrets.LOGGING_URL }}',
+              apiKey: '${{ secrets.LOGGING_API_KEY }}',
+            },
           };" > src/config.js
 
       - name: Set version
