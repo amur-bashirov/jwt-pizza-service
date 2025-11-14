@@ -6,7 +6,8 @@ const userRouter = require('./routes/userRouter.js');
 const version = require('./version.json');
 const config = require('./config.js');
 
-const log = require('pizza-logger')(config);
+const Logger = require('pizza-logger')
+const log = new Logger(config)
 
 const app = express();
 app.use(log.httpLogger);
