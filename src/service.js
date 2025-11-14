@@ -9,6 +9,7 @@ const config = require('./config.js');
 const Logger = require('pizza-logger')
 const log = new Logger(config)
 
+
 const app = express();
 app.use(log.httpLogger);
 app.use(express.json());
@@ -52,7 +53,6 @@ app.use('*', (req, res) => {
   });
 });
 
-app.use(log.errorLogger);
 
 // Default error handler for all exceptions and errors.
 app.use((err, req, res, next) => {
