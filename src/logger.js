@@ -4,20 +4,20 @@ class Logger {
   }
 
   httpLogger = (req, res, next) => {
-    let send = res.send;
+    const originalSend = res.send.bind(res);
     res.send = (resBody) => {
       const logData = {
         authorized: !!req.headers.authorization,
         path: req.path,
         method: req.method,
         statusCode: res.statusCode,
-        reqBody: JSON.stringify(req.body),
-        resBody: JSON.stringify(resBody),
+        reqBody: req.body,
+        resBody: resBody,
       };
       const level = this.statusToLogLevel(res.statusCode);
       this.log(level, 'http', logData);
-      res.send = send;
-      return res.send(resBody);
+      res.send = originalSend;
+      return originalSend(resBody);
     };
     next();
   };
@@ -53,20 +53,37 @@ class Logger {
   }
 
   sanitize(logData) {
-    logData = JSON.stringify(logData);
-    logData = logData.replace(/\\"password\\":\s*\\"[^"]*\\"/g, '\\"password\\": \\"*****\\"');
-    logData = logData.replace(/\\password\\=\s*\\"[^"]*\\"/g, '\\"password\\": \\"*****\\"');
-    return logData;
+    const clone = JSON.parse(JSON.stringify(logData));
+
+    const mask = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+
+      for (const key of Object.keys(obj)) {
+        if (key.toLowerCase().includes('password')) {
+          obj[key] = '*****'; // mask any password-like field
+        } else if (typeof obj[key] === 'object') {
+          mask(obj[key]); // recursively sanitize nested objects
+        }
+      }
+    };
+
+    mask(clone);
+
+    return JSON.stringify(clone);
   }
+
 
   async sendLogToGrafana(event) {
     // Log to factory
     const res = await fetch(`${this.config.factory.url}/api/log`, {
       method: 'POST',
-      body: {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         apiKey: this.config.factory.apiKey,
         event: event,
-      },
+      }),
     });
     if (!res.ok) {
       console.log('Failed to send log to factory');
