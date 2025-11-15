@@ -3,9 +3,11 @@ class Logger {
     this.config = config;
   }
 
-  httpLogger = (req, res, next) => {
-    const originalSend = res.send.bind(res);
-    res.send = (resBody) => {
+httpLogger = (req, res, next) => {
+  const originalSend = res.send;
+
+  res.send = (resBody) => {
+    try {
       const logData = {
         authorized: !!req.headers.authorization,
         path: req.path,
@@ -14,13 +16,22 @@ class Logger {
         reqBody: req.body,
         resBody: resBody,
       };
+
       const level = this.statusToLogLevel(res.statusCode);
       this.log(level, 'http', logData);
-      res.send = originalSend;
-      return originalSend(resBody);
-    };
-    next();
+    } catch (e) {
+      console.error("Error in httpLogger:", e);
+    }
+
+    // Call original send without replacing res.send
+    return originalSend.call(res, resBody);
   };
+
+  next();
+};
+
+
+
 
   dbLogger(query) {
     this.log('info', 'db', query);
