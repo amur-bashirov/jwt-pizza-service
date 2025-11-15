@@ -37,9 +37,17 @@ httpLogger = (req, res, next) => {
     this.log('info', 'db', query);
   }
 
-  factoryLogger(orderInfo) {
-    this.log('info', 'factory', orderInfo);
-  }
+
+  factoryLogger = (reqBody, res) => {
+      const body = JSON.stringify(reqBody);
+      const resBody = JSON.stringify(res.body);
+      const logData = {
+          facReq: body,
+          facRes: resBody,
+      };
+      const level = this.statusToLogLevel(res.statusCode);
+      this.log(level, 'factory', logData);
+    };
 
   unhandledErrorLogger(err) {
     this.log('error', 'unhandledError', { message: err.message, status: err.statusCode });
@@ -90,14 +98,15 @@ httpLogger = (req, res, next) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.factory.apiKey}`,
       },
-      body: JSON.stringify({
-        apiKey: this.config.factory.apiKey,
-        event: event,
-      }),
+      body: JSON.stringify(event ),
     });
     if (!res.ok) {
       console.log('Failed to send log to factory');
+      console.log(res.body)
+      console.log(res.status)
+      console.log(res.headers)
     }
     try {
       const resText = await res.text();
