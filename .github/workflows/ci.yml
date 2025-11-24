@@ -149,4 +149,10 @@ jobs:
             --cluster jwt-pizza-service \
             --service jwt-pizza-service \
             --force-new-deployment
+      - name: Annotate deployment in Grafana
+        run: |
+          curl -s -X POST https://amurbashirov.grafana.net/api/annotations \
+            -H "Authorization: Bearer ${{ secrets.GRAFANA_ACCESS_TOKEN }}" \
+            -H "Content-Type:application/json" \
+            -d '{"dashboardUID":"am5djrr", "panelId":3, "tags":["jwt-pizza","production"], "text":"Version '"$version"' deployed"}'
 
