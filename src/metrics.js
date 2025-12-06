@@ -3,6 +3,70 @@ const os = require("os");
 const config = require("./config.js");
 const axios = require("axios");
 
+//
+// ----------------------------
+//  Send single-metric OTLP
+// ----------------------------
+//
+async function sendMetricToGrafana(metricName, metricValue, type, unit = "") {
+  const metric = {
+    resourceMetrics: [
+      {
+        resource: {
+          attributes: [
+            { key: "service.name", value: { stringValue: config.metrics.source } }
+          ]
+        },
+        scopeMetrics: [
+          {
+            metrics: [
+              {
+                name: metricName,
+                unit: unit,
+                [type]: {
+                  dataPoints: [
+                    {
+                      asInt: Number.isInteger(metricValue)
+                        ? metricValue
+                        : undefined,
+                      asDouble: !Number.isInteger(metricValue)
+                        ? metricValue
+                        : undefined,
+                      timeUnixNano: Date.now() * 1_000_000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  if (type === "sum") {
+    const m = metric.resourceMetrics[0].scopeMetrics[0].metrics[0];
+    m.sum.aggregationTemporality = "AGGREGATION_TEMPORALITY_CUMULATIVE";
+    m.sum.isMonotonic = true;
+  }
+
+  try {
+    await axios.post(config.metrics.url, metric, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.metrics.apiKey}`,
+      },
+    });
+  } catch (err) {
+    console.error("ERROR sending metric", metricName, err.response?.data || err.message);
+  }
+}
+
+//
+// ==============================
+//       METRICS CLASS
+// ==============================
+//
 class Metrics {
   constructor() {
     this.reset();
@@ -13,46 +77,63 @@ class Metrics {
     this.requestLatency = [];
     this.pizzaPurchases = [];
 
-    this.system = {
-      cpu: 0,
-      memory: 0,
-    };
+    this.system = { cpu: 0, memory: 0 };
+
+    // Active users
+    this.activeUsers = new Map();
+    this.activeUserWindowMs = 5 * 60 * 1000;
+
+    // Auth attempts/min
+    this.authAttempts = [];
+    this.authWindowMs = 60 * 1000;
+
+    // Running counts (monotonic)
+    this.totalAuthAttempts = 0;
+    this.totalPizzaPurchases = 0;
   }
 
-  // ---------------------------------------------------------
-  // 1. EXPRESS MIDDLEWARE — track ALL endpoint requests
-  // ---------------------------------------------------------
+  getActiveUserCount() {
+    const cutoff = Date.now() - this.activeUserWindowMs;
+    for (const [id, ts] of this.activeUsers.entries()) {
+      if (ts < cutoff) this.activeUsers.delete(id);
+    }
+    return this.activeUsers.size;
+  }
+
+  authenticationAttempt(success) {
+    this.authAttempts.push({ success, ts: Date.now() });
+    this.totalAuthAttempts++;
+  }
+
+  getAuthAttemptsPerMinute() {
+    const cutoff = Date.now() - this.authWindowMs;
+    this.authAttempts = this.authAttempts.filter(a => a.ts >= cutoff);
+    return this.authAttempts.length;
+  }
+
   requestTracker = (req, res, next) => {
     const start = Date.now();
     this.requestCounts[req.method]++;
 
+    const userId = req.headers["x-user-id"] || req.user?.id;
+    if (userId) this.activeUsers.set(userId, Date.now());
+
     res.on("finish", () => {
-      const latency = Date.now() - start;
       this.requestLatency.push({
         route: req.originalUrl,
         method: req.method,
-        latencyMs: latency,
+        latencyMs: Date.now() - start
       });
     });
 
     next();
   };
 
-  // ---------------------------------------------------------
-  // 2. Track pizza purchases
-  // ---------------------------------------------------------
   pizzaPurchase(success, latencyMs, price) {
-    this.pizzaPurchases.push({
-      success,
-      latencyMs,
-      price,
-      ts: Date.now(),
-    });
+    this.pizzaPurchases.push({ success, latencyMs, price, ts: Date.now() });
+    this.totalPizzaPurchases++;
   }
 
-  // ---------------------------------------------------------
-  // 3. System metrics (CPU, Memory)
-  // ---------------------------------------------------------
   updateSystem() {
     const cpuLoad = os.loadavg()[0] / os.cpus().length;
     const total = os.totalmem();
@@ -62,149 +143,107 @@ class Metrics {
     this.system.memory = Number((((total - free) / total) * 100).toFixed(2));
   }
 
-  // ---------------------------------------------------------
-  // 4. Convert metrics to proper OTLP format for Grafana Cloud
-  // ---------------------------------------------------------
-  buildOTLP() {
+  //
+  // ============================================
+  //         SEND ALL METRICS ONE-BY-ONE
+  // ============================================
+  //
+  async sendToGrafana() {
     this.updateSystem();
 
-    const now = Date.now() * 1_000_000;
-
-    let metrics = [];
-
-    // ---- request counts ----
-    for (let method of ["GET", "POST", "PUT", "DELETE"]) {
-      metrics.push({
-        name: "requests_total",
-        sum: {
-          aggregationTemporality: "AGGREGATION_TEMPORALITY_CUMULATIVE",
-          isMonotonic: true,
-          dataPoints: [
-            {
-              asInt: this.requestCounts[method],
-              attributes: [
-                { key: "method", value: { stringValue: method } }
-              ],
-              timeUnixNano: now
-            }
-          ]
-        }
-      });
+    //
+    // Request counts (monotonic sum)
+    //
+    for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+      await sendMetricToGrafana(
+        "requests_total",
+        this.requestCounts[method],
+        "sum",
+        "count"
+      );
     }
 
-    // ---- latency ----
-    this.requestLatency.forEach((l) => {
-      metrics.push({
-        name: "request_latency_ms",
-        gauge: {
-          dataPoints: [
-            {
-              asDouble: l.latencyMs,
-              attributes: [
-                { key: "route", value: { stringValue: l.route } },
-                { key: "method", value: { stringValue: l.method } }
-              ],
-              timeUnixNano: now
-            }
-          ]
-        }
-      });
-    });
-
-    // ---- system metrics ----
-    metrics.push({
-      name: "cpu_percent",
-      gauge: {
-        dataPoints: [{ asDouble: this.system.cpu, timeUnixNano: now }]
-      }
-    });
-
-    metrics.push({
-      name: "memory_percent",
-      gauge: {
-        dataPoints: [{ asDouble: this.system.memory, timeUnixNano: now }]
-      }
-    });
-
-    // ---- pizza purchase metrics ----
-    this.pizzaPurchases.forEach((p) => {
-      metrics.push({
-        name: "pizza_purchase_latency_ms",
-        gauge: {
-          dataPoints: [
-            {
-              asDouble: p.latencyMs,
-              attributes: [
-                { key: "success", value: { boolValue: p.success } }
-              ],
-              timeUnixNano: now
-            }
-          ]
-        }
-      });
-
-      metrics.push({
-        name: "pizza_purchase_price",
-        gauge: {
-          dataPoints: [
-            {
-              asDouble: p.price,
-              attributes: [
-                { key: "success", value: { boolValue: p.success } }
-              ],
-              timeUnixNano: now
-            }
-          ]
-        }
-      });
-    });
-
-    return {
-      resourceMetrics: [
-        {
-          resource: {
-            attributes: [
-              {
-                key: "service.name",
-                value: { stringValue: config.metrics.source }
-              }
-            ]
-          },
-          scopeMetrics: [
-            {
-              metrics
-            }
-          ]
-        }
-      ]
-    };
-  }
-
-  // ---------------------------------------------------------
-  // 5. SEND TO GRAFANA CLOUD (OTLP endpoint)
-  // ---------------------------------------------------------
-  async sendToGrafana() {
-    const payload = this.buildOTLP();
-
-    try {
-      await axios.post(config.metrics.url, payload, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.metrics.apiKey}`,
-        },
-      });
-
-      console.log("Metrics sent");
-
-      // Clear per-interval data
-      this.requestLatency = [];
-      this.pizzaPurchases = [];
-
-    } catch (err) {
-      console.error("ERROR sending metrics:", err.response?.data || err.message);
+    //
+    // Request latency (gauge)
+    //
+    for (const l of this.requestLatency) {
+      await sendMetricToGrafana(
+        `request_latency_ms_${l.method}_${l.route}`,
+        l.latencyMs,
+        "gauge",
+        "ms"
+      );
     }
+    this.requestLatency = [];
+
+    //
+    // System metrics
+    //
+    await sendMetricToGrafana("cpu_percent", this.system.cpu, "gauge", "%");
+    await sendMetricToGrafana("memory_percent", this.system.memory, "gauge", "%");
+
+    //
+    // Pizza metrics
+    //
+    for (const p of this.pizzaPurchases) {
+      await sendMetricToGrafana(
+        "pizza_purchase_latency_ms",
+        p.latencyMs,
+        "gauge",
+        "ms"
+      );
+
+      await sendMetricToGrafana(
+        "pizza_purchase_price",
+        p.price,
+        "gauge",
+        "usd"
+      );
+    }
+    this.pizzaPurchases = [];
+
+    //
+    // Active users
+    //
+    await sendMetricToGrafana(
+      "active_users",
+      this.getActiveUserCount(),
+      "gauge",
+      "count"
+    );
+
+    //
+    // Auth attempts / min
+    //
+    await sendMetricToGrafana(
+      "auth_attempts_per_minute",
+      this.getAuthAttemptsPerMinute(),
+      "gauge",
+      "count"
+    );
+
+    //
+    // Total auth attempts (monotonic)
+    //
+    await sendMetricToGrafana(
+      "auth_attempts_total",
+      this.totalAuthAttempts,
+      "sum",
+      "count"
+    );
+
+    //
+    // Total pizza purchases (monotonic)
+    //
+    await sendMetricToGrafana(
+      "pizza_purchases_total",
+      this.totalPizzaPurchases,
+      "sum",
+      "count"
+    );
   }
 }
 
 module.exports = new Metrics();
+
 
