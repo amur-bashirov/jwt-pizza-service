@@ -8,12 +8,19 @@ const config = require('./config.js');
 
 const Logger = require('./logger.js')
 const log = new Logger(config)
+const metrics = require("./metrics.js");
+
 
 
 const app = express();
 app.use(log.httpLogger);
 app.use(express.json());
 app.use(setAuthUser);
+app.use(metrics.requestTracker);
+
+setInterval(() => {
+  metrics.sendToGrafana();
+}, 5000); 
 
 
 
